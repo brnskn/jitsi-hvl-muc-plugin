@@ -4,10 +4,15 @@
 
 # Get Active Rooms
 **URL** : `/rooms`
+
 **Method** : `GET`
+
 **cURL** : `curl "http://localhost:5280/rooms"`
+
 ## Success Responses
+
 **Code** : `200 OK`
+
 **Content** :
 ```json
 [
@@ -21,12 +26,19 @@
     }
 ]
 ```
+
 # Get Specific Room Detail
+
 **URL** : `http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}`
+
 **Method** : `GET`
+
 **cURL** : `curl "http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}"`
+
 ## Success Responses
+
 **Code** : `200 OK`
+
 **Content** :
 ```json
 {
@@ -47,22 +59,37 @@
 ```
 
 # Create Room
+
 **URL** : `http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}`
+
 **Method** : `PUT`
+
 **cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}"`
+
 ## Success Responses
+
 **Code** : `200 OK`
 
 # Destroy Room
+
 **URL** : `http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}`
+
 **Method** : `DELETE`
+
 **cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}"`
+
 ## Success Responses
+
 **Code** : `200 OK`
 
 # Change Room Password
+
 **URL** : `http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}&password={PASSWORD}`
+
 **Method** : `PATCH`
+
 **cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}&password={PASSWORD}"`
+
 ## Success Responses
+
 **Code** : `200 OK`
