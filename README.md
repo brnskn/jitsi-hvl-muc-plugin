@@ -29,11 +29,11 @@
 
 # Get Specific Room Detail
 
-**URL** : `http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}`
+**URL** : `http://localhost:5280/room?room={ROOM_NAME}`
 
 **Method** : `GET`
 
-**cURL** : `curl "http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}"`
+**cURL** : `curl "http://localhost:5280/room?room={ROOM_NAME}"`
 
 ## Success Responses
 
@@ -60,11 +60,11 @@
 
 # Create Room
 
-**URL** : `http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}`
+**URL** : `http://localhost:5280/room?room={ROOM_NAME}`
 
 **Method** : `PUT`
 
-**cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}"`
+**cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}"`
 
 ## Success Responses
 
@@ -72,11 +72,11 @@
 
 # Destroy Room
 
-**URL** : `http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}`
+**URL** : `http://localhost:5280/room?room={ROOM_NAME}`
 
 **Method** : `DELETE`
 
-**cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}"`
+**cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}"`
 
 ## Success Responses
 
@@ -84,11 +84,11 @@
 
 # Change Room Password
 
-**URL** : `http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}&password={PASSWORD}`
+**URL** : `http://localhost:5280/room?room={ROOM_NAME}&password={PASSWORD}`
 
 **Method** : `PATCH`
 
-**cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}&domain={DOMAIN}&password={PASSWORD}"`
+**cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}&password={PASSWORD}"`
 
 ## Success Responses
 

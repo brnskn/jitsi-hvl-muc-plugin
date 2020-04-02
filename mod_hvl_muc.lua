@@ -43,7 +43,9 @@ local get_room_from_jid = module:require "util".get_room_from_jid;
 -- required parameter for custom muc component prefix,
 -- defaults to "conference"
 local muc_domain_prefix
-    = module:get_option_string("muc_mapper_domain_prefix", "conference");
+	= module:get_option_string("muc_mapper_domain_prefix", "conference");
+
+local muc_component_host = nil;
 
 --- Handles request for retrieving the room size
 -- @param event the http event, holds the request query
@@ -56,10 +58,9 @@ function get_room_size(event)
 
 	local params = parse(event.request.url.query);
 	local room_name = params["room"];
-	local domain_name = params["domain"];
 
     local room_address
-        = jid.join(room_name, muc_domain_prefix.."."..domain_name);
+        = jid.join(room_name, muc_component_host);
 
 	local room = get_room_from_jid(room_address);
 	local participant_count = 0;
@@ -95,9 +96,8 @@ function get_room (event)
 
 	local params = parse(event.request.url.query);
 	local room_name = params["room"];
-	local domain_name = params["domain"];
     local room_address
-        = jid.join(room_name, muc_domain_prefix.."."..domain_name);
+        = jid.join(room_name, muc_component_host);
 
 	local room = get_room_from_jid(room_address);
 	local participant_count = 0;
@@ -163,14 +163,11 @@ function create_room (event)
 	end
 
 	local params = parse(event.request.url.query);
-	local domain_name = params["domain"];
 	local room_name = params["room"];
-    local host_address
-		= muc_domain_prefix.."."..domain_name;
 	local room_address
-        = jid.join(room_name, muc_domain_prefix.."."..domain_name);
+        = jid.join(room_name, muc_component_host);
 		
-	local component = hosts[host_address];
+	local component = hosts[muc_component_host];
 	if component then
 		local muc = component.modules.muc;
 		local room = muc.create_room(room_address);
@@ -192,10 +189,9 @@ function destroy_room(event)
         return { status_code = 400; };
 	end
 	local params = parse(event.request.url.query);
-	local domain_name = params["domain"];
 	local room_name = params["room"];
 	local room_address
-		= jid.join(room_name, muc_domain_prefix.."."..domain_name);
+		= jid.join(room_name, muc_component_host);
 	local room = get_room_from_jid(room_address);
 	if not room then
         return { status_code = 404; };
@@ -212,11 +208,10 @@ function change_room(event)
         return { status_code = 400; };
 	end
 	local params = parse(event.request.url.query);
-	local domain_name = params["domain"];
 	local room_name = params["room"];
 	local password = params["password"];
 	local room_address
-		= jid.join(room_name, muc_domain_prefix.."."..domain_name);
+		= jid.join(room_name, muc_component_host);
 	local room = get_room_from_jid(room_address);
 	if not room then
         return { status_code = 404; };
@@ -227,31 +222,29 @@ function change_room(event)
 	return { status_code = 200; };
 end
 
-function rooms(event)
-    local room_list = array();
-    for _, host in pairs(hosts) do
-        local component = host;
-        if component then
-            local muc = component.modules.muc
-            local rooms = nil;
-            if muc and rawget(muc,"rooms") then
-                return muc.rooms;
-            elseif muc and rawget(muc,"live_rooms") then
-                rooms = muc.live_rooms();
-            elseif muc and rawget(muc,"each_room") then
-                rooms = muc.each_room(true);
-            end
-            if rooms then
-                for room in rooms do
-					local jid, room_name = room.jid, room:get_name();
-                    room_list:push({ 
-                        jid = jid, 
-						name = room_name
-                    });
-                end
-            end
-        end
-    end
+function rooms()
+	local room_list = array();
+	local component = hosts[muc_component_host];
+	if component then
+		local muc = component.modules.muc
+		local rooms = nil;
+		if muc and rawget(muc,"rooms") then
+			return muc.rooms;
+		elseif muc and rawget(muc,"live_rooms") then
+			rooms = muc.live_rooms();
+		elseif muc and rawget(muc,"each_room") then
+			rooms = muc.each_room(true);
+		end
+		if rooms then
+			for room in rooms do
+				local jid_name, room_name = room.jid, room:get_name();
+				room_list:push({ 
+					jid = jid_name, 
+					name = room_name
+				});
+			end
+		end
+	end
 	return { status_code = 200; body = json.encode(room_list); };
 end
 
@@ -271,3 +264,18 @@ function module.load()
 	});
 end
 
+
+function process_host(host)
+	for _, host in pairs(hosts) do
+		local node, hostname = jid.split(tostring(host.host));
+		if hostname:match"([^.]*).(.*)" == muc_domain_prefix then
+			muc_component_host = host.host;
+		end
+	end
+end
+
+if prosody.hosts[muc_component_host] == nil then
+	prosody.events.add_handler("host-activated", process_host);
+else
+    process_host(muc_component_host);
+end
