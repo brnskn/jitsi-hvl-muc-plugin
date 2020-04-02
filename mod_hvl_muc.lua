@@ -38,6 +38,29 @@ end
 -- option to enable/disable room API token verifications
 local get_room_from_jid = module:require "util".get_room_from_jid;
 
+local driver = require "luasql.sqlite3"
+env = driver.sqlite3()
+con = env:connect("logs.db")
+res = con:execute[[
+  CREATE TABLE IF NOT EXISTS rooms(
+    jid  varchar(255) NOT NULL PRIMARY KEY,
+    name varchar(255),
+    password varchar(255),
+    created_at varchar(255)
+  )
+]]
+
+res = con:execute[[
+  CREATE TABLE IF NOT EXISTS room_occupants(
+    jid  varchar(255) NOT NULL,
+    room_jid varchar(255) NOT NULL,
+    email varchar(255),
+	display_name varchar(255),
+    created_at varchar(255),
+	PRIMARY KEY (room_jid, display_name)
+  )
+]]
+
 -- no token configuration but required
 
 -- required parameter for custom muc component prefix,
@@ -127,12 +150,12 @@ function get_room (event)
 			    -- filter focus as we keep it as hidden participant
 			    if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
 				    for _, pr in occupant:each_session() do
-					local nick = pr:get_child_text("nick", "http://jabber.org/protocol/nick") or "";
-					local email = pr:get_child_text("email") or "";
-					occupants_json:push({
-					    jid = tostring(occupant.nick),
-					    email = tostring(email),
-					    display_name = tostring(nick)});
+						local nick = pr:get_child_text("nick", "http://jabber.org/protocol/nick") or "";
+						local email = pr:get_child_text("email") or "";
+						occupants_json:push({
+							jid = tostring(occupant.nick),
+							email = tostring(email),
+							display_name = tostring(nick)});
 				    end
 			    end
 			end
@@ -248,6 +271,118 @@ function rooms()
 	return { status_code = 200; body = json.encode(room_list); };
 end
 
+function rows (connection, sql_statement)
+	local cursor = assert (con:execute (sql_statement))
+	return function ()
+	  return cursor:fetch()
+	end
+end
+
+function get_room_stats(event)
+
+	local params = parse(event.request.url.query or "");
+	local page = params["page"] or 1;
+	local page_size = 25;
+	local offset = (page - 1) * page_size;
+	cur = con:execute"SELECT COUNT(*) as count FROM rooms";
+	local total_page = math.ceil(tonumber(cur:fetch({}, "a").count) / page_size);
+	
+	local rooms = array();
+	for jid, name, password, created_at in rows (con, string.format("SELECT * FROM rooms LIMIT %s,%s", offset, page_size)) do
+		local occupants = array();
+		for user_jid, room_jid, email, display_name, user_created_at in rows (con, string.format("SELECT * FROM room_occupants WHERE room_jid='%s'", jid)) do
+			occupants:push({ 
+				jid = user_jid, 
+				room_jid = room_jid, 
+				email = email,
+				display_name = display_name,
+				created_at = user_created_at,
+			});
+		end
+		rooms:push({ 
+			jid = jid, 
+			name = name,
+			password = password,
+			created_at = created_at,
+			occupants = occupants
+		});
+	end
+	return { status_code = 200; body = json.encode({
+		current_page = page,
+		total_page = total_page,
+		page_size = page_size,
+		data = rooms
+	}); };
+end
+
+function room_created(event)
+    module:log("info", "room ok");
+	local room = event.room;
+
+	res = con:execute(string.format([[
+		INSERT INTO rooms
+		VALUES ('%s', '%s', '%s', '%s')]], 
+		room.jid, 
+		room:get_name(), 
+		room:get_password() or "",
+		tostring(room.created_timestamp or os.time(os.date("!*t")) * 1000))
+	)
+    module:log("info", "room added %s", string.format([[
+		INSERT INTO rooms VALUES ('%s', '%s', '%s', '%s')]], 
+		room.jid, 
+		room:get_name(), 
+		room:get_password() or "",
+		tostring(room.created_timestamp or os.time(os.date("!*t")) * 1000)));
+end
+
+function occupant_joined(event)
+    module:log("info", "occupant ok");
+	local room = event.room;
+	local occupant = event.occupant;
+	if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
+		for _, pr in occupant:each_session() do
+			local nick = pr:get_child_text("nick", "http://jabber.org/protocol/nick") or "";
+			if nick~="" then
+				local email = pr:get_child_text("email") or "";
+				res = con:execute(string.format([[
+					INSERT INTO room_occupants
+					VALUES ('%s', '%s', '%s', '%s', '%s')]], 
+					tostring(occupant.nick), 
+					room.jid, 
+					tostring(email), 
+					tostring(nick),
+					tostring(os.time(os.date("!*t")) * 1000) or ""
+				))
+	
+				module:log("info", "occupant added %s", string.format([[
+					INSERT INTO room_occupants VALUES ('%s', '%s', '%s', '%s')]], 
+					tostring(occupant.nick), 
+					room.jid, 
+					tostring(email), 
+					tostring(nick)));
+			end
+		end
+	end
+end
+
+function process_host(created_host)
+    module:log("info", "host ok");
+	for _, host in pairs(hosts) do
+		local node, hostname = jid.split(tostring(host.host));
+		if hostname:match"([^.]*).(.*)" == muc_domain_prefix then
+			muc_component_host = host.host;
+		end
+	end
+	module:log("info", "hooks %s - %s",created_host,muc_component_host);
+    if created_host == muc_component_host then -- the conference muc component
+        local muc_module = module:context(created_host);
+        muc_module:hook("muc-room-created", room_created, -1);
+		muc_module:hook("muc-occupant-joined", occupant_joined, -1);
+		muc_module:hook("muc-broadcast-presence", occupant_joined, -1);
+    	module:log("info", "hooks ok %s",created_host);
+	end
+end
+
 function module.load()
     module:depends("http");
 	module:provides("http", {
@@ -260,22 +395,9 @@ function module.load()
 			["PUT room"] = function (event) return async_handler_wrapper(event,create_room) end;
 			["DELETE room"] = function (event) return async_handler_wrapper(event,destroy_room) end;
 			["PATCH room"] = function (event) return async_handler_wrapper(event,change_room) end;
+			["GET room_stats"] = function (event) return async_handler_wrapper(event,get_room_stats) end;
 		};
 	});
 end
 
-
-function process_host(host)
-	for _, host in pairs(hosts) do
-		local node, hostname = jid.split(tostring(host.host));
-		if hostname:match"([^.]*).(.*)" == muc_domain_prefix then
-			muc_component_host = host.host;
-		end
-	end
-end
-
-if prosody.hosts[muc_component_host] == nil then
-	prosody.events.add_handler("host-activated", process_host);
-else
-    process_host(muc_component_host);
-end
+prosody.events.add_handler("host-activated", process_host);
