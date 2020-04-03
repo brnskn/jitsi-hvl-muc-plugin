@@ -2,7 +2,7 @@
 
 # Installation
 
-Copy mod_hvl_muc.lua to
+Copy `mod_hvl_muc.lua` and `mod_hvl_api.lua` to
 
 `/usr/share/jitsi-meet/prosody-plugins/`
 
@@ -10,7 +10,7 @@ Install dependency
 
 `sudo apt install lua-sql-sqlite3`
 
-Enable module from `/etc/prosody/conf.d/localhost.cfg.lua` by adding this
+Enable module `hvl_api` from `/etc/prosody/conf.d/localhost.cfg.lua` by adding this
 
 ```
 VirtualHost "localhost"
@@ -18,8 +18,22 @@ VirtualHost "localhost"
     app_secret=""
     authentication = "anonymous"
     modules_enabled = {
-        "hvl_muc";
+        "hvl_api";
     }
+```
+
+Then enable `hvl_muc` module from `/etc/prosody/conf.d/$HOSTNAME.cfg.lua` by changing this
+
+```
+Component "conference.$HOSTNAME" "muc"
+    storage = "memory"
+    modules_enabled = {
+        "muc_meeting_id";
+        "muc_domain_mapper";
+        "hvl_muc"; <---- ADD THIS LINE
+        -- "token_verification";
+    }
+    admins = { "focus@auth.$HOSTNAME" }
 ```
 
 # Doc

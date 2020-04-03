@@ -2,10 +2,91 @@
 -- Copyright (C) 2017 Atlassian
 --
 
+function get_log()
+	local log = { _version = "0.1.0" }
+	log.usecolor = true
+	log.outfile = nil
+	log.level = "trace"
+
+	local modes = {
+		{ name = "trace", color = "\27[34m", },
+		{ name = "debug", color = "\27[36m", },
+		{ name = "info",  color = "\27[32m", },
+		{ name = "warn",  color = "\27[33m", },
+		{ name = "error", color = "\27[31m", },
+		{ name = "fatal", color = "\27[35m", },
+	}
+
+	local levels = {}
+	for i, v in ipairs(modes) do
+		levels[v.name] = i
+	end
+
+	local round = function(x, increment)
+		increment = increment or 1
+		x = x / increment
+		return (x > 0 and math.floor(x + .5) or math.ceil(x - .5)) * increment
+	end
+
+	local _tostring = tostring
+
+	local tostring = function(...)
+		local t = {}
+		for i = 1, select('#', ...) do
+			local x = select(i, ...)
+			if type(x) == "number" then
+			x = round(x, .01)
+			end
+			t[#t + 1] = _tostring(x)
+		end
+		return table.concat(t, " ")
+	end
+
+	for i, x in ipairs(modes) do
+		local nameupper = x.name:upper()
+		log[x.name] = function(...)
+			
+			-- Return early if we're below the log level
+			if i < levels[log.level] then
+				return
+			end
+
+			local msg = tostring(...)
+			local info = debug.getinfo(2, "Sl")
+			local lineinfo = info.short_src .. ":" .. info.currentline
+
+			-- Output to console
+			print(string.format("%s[%-6s%s]%s %s: %s",
+								log.usecolor and x.color or "",
+								nameupper,
+								os.date("%H:%M:%S"),
+								log.usecolor and "\27[0m" or "",
+								lineinfo,
+								msg))
+
+			-- Output to log file
+			if log.outfile then
+				local fp = io.open(log.outfile, "a")
+				local str = string.format("[%-6s%s] %s\n",
+											nameupper, os.date("%m/%d/%Y %H:%M:%S"), msg)
+				fp:write(str)
+				fp:close()
+			end
+
+		end
+	end
+	return log
+end
+
+
+local log = get_log();
+log.outfile = "hvl_muc.log";
+
+local debug_log = get_log();
+debug_log.outfile = "hvl_muc.debug.log";
+
+
 local jid = require "util.jid";
-local it = require "util.iterators";
-local json = require "util.json";
-local iterators = require "util.iterators";
 local array = require"util.array";
 
 local have_async = pcall(require, "util.async");
@@ -17,23 +98,6 @@ end
 local async_handler_wrapper = module:require "util".async_handler_wrapper;
 
 local tostring = tostring;
-
-function urldecode(s)
-	s = s:gsub('+', ' ')
-		 :gsub('%%(%x%x)', function(h)
-							 return string.char(tonumber(h, 16))
-						   end)
-	return s
-end
-   
-function parse(s)
-	local ans = {}
-	for k,v in s:gmatch('([^&=?]-)=([^&=?]+)' ) do
-	  ans[ k ] = urldecode(v)
-	end
-	return ans
-end
-
 
 -- option to enable/disable room API token verifications
 local get_room_from_jid = module:require "util".get_room_from_jid;
@@ -61,263 +125,11 @@ res = con:execute[[
   )
 ]]
 
--- no token configuration but required
-
--- required parameter for custom muc component prefix,
--- defaults to "conference"
-local muc_domain_prefix
-	= module:get_option_string("muc_mapper_domain_prefix", "conference");
-
-local muc_component_host = nil;
-
---- Handles request for retrieving the room size
--- @param event the http event, holds the request query
--- @return GET response, containing a json with participants count,
---         tha value is without counting the focus.
-function get_room_size(event)
-    if (not event.request.url.query) then
-        return { status_code = 400; };
-    end
-
-	local params = parse(event.request.url.query);
-	local room_name = params["room"];
-
-    local room_address
-        = jid.join(room_name, muc_component_host);
-
-	local room = get_room_from_jid(room_address);
-	local participant_count = 0;
-
-	log("debug", "Querying room %s", tostring(room_address));
-
-	if room then
-		local occupants = room._occupants;
-		if occupants then
-			participant_count = iterators.count(room:each_occupant());
-		end
-		log("debug",
-            "there are %s occupants in room", tostring(participant_count));
-	else
-		log("debug", "no such room exists");
-		return { status_code = 404; };
-	end
-
-	if participant_count > 1 then
-		participant_count = participant_count - 1;
-	end
-
-	return { status_code = 200; body = [[{"participants":]]..participant_count..[[}]] };
-end
-
---- Handles request for retrieving the room participants details
--- @param event the http event, holds the request query
--- @return GET response, containing a json with room and participants details
-function get_room (event)
-    if (not event.request.url.query) then
-        return { status_code = 400; };
-    end
-
-	local params = parse(event.request.url.query);
-	local room_name = params["room"];
-    local room_address
-        = jid.join(room_name, muc_component_host);
-
-	local room = get_room_from_jid(room_address);
-	local participant_count = 0;
-	local occupants_json = array();
-	local room_json = {};
-
-	log("debug", "Querying room %s", tostring(room_address));
-
-	if room then
-		local password = room:get_password() or "";
-
-        if room.created_timestamp == nil then
-            room.created_timestamp = os.time(os.date("!*t")) * 1000;
-		end
-		
-		room_json = { 
-			jid = room.jid, 
-			name = room:get_name(),
-			password = password,
-			conference_duration = room.created_timestamp
-		}
-
-		local occupants = room._occupants;
-		if occupants then
-			participant_count = iterators.count(room:each_occupant());
-			for _, occupant in room:each_occupant() do
-			    -- filter focus as we keep it as hidden participant
-			    if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
-				    for _, pr in occupant:each_session() do
-						local nick = pr:get_child_text("nick", "http://jabber.org/protocol/nick") or "";
-						local email = pr:get_child_text("email") or "";
-						occupants_json:push({
-							jid = tostring(occupant.nick),
-							email = tostring(email),
-							display_name = tostring(nick)});
-				    end
-			    end
-			end
-		end
-		log("debug",
-            "there are %s occupants in room", tostring(participant_count));
-	else
-		log("debug", "no such room exists");
-		return { status_code = 404; };
-	end
-
-	if participant_count > 1 then
-		participant_count = participant_count - 1;
-	end
-
-	return { status_code = 200; body = json.encode({
-		room = room_json,
-		occupants = occupants_json
-	}); };
-end
-
---- Handles request for creating new room
--- @param event the http event, holds the request query
--- @return GET response, containing a json with added room details
-function create_room (event)
-    if (not event.request.url.query) then
-        return { status_code = 400; };
-	end
-
-	local params = parse(event.request.url.query);
-	local room_name = params["room"];
-	local room_address
-        = jid.join(room_name, muc_component_host);
-		
-	local component = hosts[muc_component_host];
-	if component then
-		local muc = component.modules.muc;
-		local room = muc.create_room(room_address);
-		if room then
-			return { status_code = 200; };
-		else
-			return { status_code = 500; };
-		end
-	else
-        return { status_code = 404; };
-	end
-end
-
---- Handles request for deleting room
--- @param event the http event, holds the request query
--- @return GET response
-function destroy_room(event)
-    if (not event.request.url.query) then
-        return { status_code = 400; };
-	end
-	local params = parse(event.request.url.query);
-	local room_name = params["room"];
-	local room_address
-		= jid.join(room_name, muc_component_host);
-	local room = get_room_from_jid(room_address);
-	if not room then
-        return { status_code = 404; };
-	end
-	room:destroy();
-	return { status_code = 200; };
-end
-
---- Handles request for deleting room
--- @param event the http event, holds the request query
--- @return GET response
-function change_room(event)
-    if (not event.request.url.query) then
-        return { status_code = 400; };
-	end
-	local params = parse(event.request.url.query);
-	local room_name = params["room"];
-	local password = params["password"];
-	local room_address
-		= jid.join(room_name, muc_component_host);
-	local room = get_room_from_jid(room_address);
-	if not room then
-        return { status_code = 404; };
-	end
-	if password then
-		room:set_password(room, password);
-	end
-	return { status_code = 200; };
-end
-
-function rooms()
-	local room_list = array();
-	local component = hosts[muc_component_host];
-	if component then
-		local muc = component.modules.muc
-		local rooms = nil;
-		if muc and rawget(muc,"rooms") then
-			return muc.rooms;
-		elseif muc and rawget(muc,"live_rooms") then
-			rooms = muc.live_rooms();
-		elseif muc and rawget(muc,"each_room") then
-			rooms = muc.each_room(true);
-		end
-		if rooms then
-			for room in rooms do
-				local jid_name, room_name = room.jid, room:get_name();
-				room_list:push({ 
-					jid = jid_name, 
-					name = room_name
-				});
-			end
-		end
-	end
-	return { status_code = 200; body = json.encode(room_list); };
-end
-
-function rows (connection, sql_statement)
-	local cursor = assert (con:execute (sql_statement))
-	return function ()
-	  return cursor:fetch()
-	end
-end
-
-function get_room_stats(event)
-
-	local params = parse(event.request.url.query or "");
-	local page = params["page"] or 1;
-	local page_size = 25;
-	local offset = (page - 1) * page_size;
-	cur = con:execute"SELECT COUNT(*) as count FROM rooms";
-	local total_page = math.ceil(tonumber(cur:fetch({}, "a").count) / page_size);
-	
-	local rooms = array();
-	for jid, name, password, created_at in rows (con, string.format("SELECT * FROM rooms LIMIT %s,%s", offset, page_size)) do
-		local occupants = array();
-		for user_jid, room_jid, email, display_name, user_created_at in rows (con, string.format("SELECT * FROM room_occupants WHERE room_jid='%s'", jid)) do
-			occupants:push({ 
-				jid = user_jid, 
-				room_jid = room_jid, 
-				email = email,
-				display_name = display_name,
-				created_at = user_created_at,
-			});
-		end
-		rooms:push({ 
-			jid = jid, 
-			name = name,
-			password = password,
-			created_at = created_at,
-			occupants = occupants
-		});
-	end
-	return { status_code = 200; body = json.encode({
-		current_page = page,
-		total_page = total_page,
-		page_size = page_size,
-		data = rooms
-	}); };
-end
-
 function room_created(event)
-    module:log("info", "room ok");
+	debug_log.info("room_created ok");
 	local room = event.room;
+
+	log.info(string.format("room created: room=%s, room_jid=%s", room:get_name(), room.jid));
 
 	res = con:execute(string.format([[
 		INSERT INTO rooms
@@ -327,16 +139,22 @@ function room_created(event)
 		room:get_password() or "",
 		tostring(room.created_timestamp or os.time(os.date("!*t")) * 1000))
 	)
-    module:log("info", "room added %s", string.format([[
-		INSERT INTO rooms VALUES ('%s', '%s', '%s', '%s')]], 
+    debug_log.info(string.format([[room added INSERT INTO rooms VALUES ('%s', '%s', '%s', '%s')]], 
 		room.jid, 
 		room:get_name(), 
 		room:get_password() or "",
 		tostring(room.created_timestamp or os.time(os.date("!*t")) * 1000)));
 end
 
+function room_destroyed(event)
+	debug_log.info("room_destroyed ok");
+	local room = event.room;
+
+	log.info(string.format("room destroyed: room=%s, room_jid=%s", room:get_name(), room.jid));
+end
+
 function occupant_joined(event)
-    module:log("info", "occupant ok");
+    debug_log.info("occupant_joined ok");
 	local room = event.room;
 	local occupant = event.occupant;
 	if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
@@ -344,60 +162,91 @@ function occupant_joined(event)
 			local nick = pr:get_child_text("nick", "http://jabber.org/protocol/nick") or "";
 			if nick~="" then
 				local email = pr:get_child_text("email") or "";
-				res = con:execute(string.format([[
-					INSERT INTO room_occupants
-					VALUES ('%s', '%s', '%s', '%s', '%s')]], 
-					tostring(occupant.nick), 
-					room.jid, 
-					tostring(email), 
-					tostring(nick),
-					tostring(os.time(os.date("!*t")) * 1000) or ""
-				))
-	
-				module:log("info", "occupant added %s", string.format([[
-					INSERT INTO room_occupants VALUES ('%s', '%s', '%s', '%s')]], 
-					tostring(occupant.nick), 
-					room.jid, 
-					tostring(email), 
-					tostring(nick)));
+
+				cur = con:execute(string.format("SELECT COUNT(*) as count FROM room_occupants WHERE room_jid='%s' AND jid='%s'", room.jid, tostring(occupant.nick)));
+				
+				if tonumber(cur:fetch({}, "a").count) > 0 then
+					cur = con:execute(string.format("SELECT * FROM room_occupants WHERE room_jid='%s' AND jid='%s'", room.jid, tostring(occupant.nick)));
+					old_room = cur:fetch({}, "a");
+					if old_room.display_name~=tostring(nick) then
+						log.info(string.format("occupant changed username: room=%s, room_jid=%s, user_jid=%s, nick=%s, old_nick=%s", room:get_name(), room.jid, tostring(occupant.nick), tostring(nick), old_room.display_name));
+					end
+
+					res = assert(con:execute(string.format([[
+						UPDATE room_occupants
+						SET email='%s', display_name='%s' WHERE room_jid='%s' AND jid='%s']], 
+						tostring(email), 
+						tostring(nick),
+						room.jid, 
+						tostring(occupant.nick)
+					)))
+
+					debug_log.info(string.format([[occupant changed UPDATE room_occupants SET email='%s', display_name='%s' WHERE room_jid='%s' AND jid='%s')]], 
+						tostring(email), 
+						tostring(nick),
+						room.jid, 
+						tostring(occupant.nick)));
+				else
+					res = con:execute(string.format([[
+						INSERT INTO room_occupants
+						VALUES ('%s', '%s', '%s', '%s', '%s')]], 
+						tostring(occupant.nick), 
+						room.jid, 
+						tostring(email), 
+						tostring(nick),
+						tostring(os.time(os.date("!*t")) * 1000) or ""
+					))
+
+					debug_log.info(string.format([[occupant added INSERT INTO room_occupants VALUES ('%s', '%s', '%s', '%s')]], 
+							tostring(occupant.nick), 
+							room.jid, 
+							tostring(email), 
+							tostring(nick)));
+				end
 			end
 		end
 	end
 end
 
-function process_host(created_host)
-    module:log("info", "host ok");
-	for _, host in pairs(hosts) do
-		local node, hostname = jid.split(tostring(host.host));
-		if hostname:match"([^.]*).(.*)" == muc_domain_prefix then
-			muc_component_host = host.host;
+
+function occupant_joined_log(event)
+    debug_log.info("occupant_joined_log ok");
+	local room = event.room;
+	local occupant = event.occupant;
+	if occupant then
+		if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
+			for _, pr in occupant:each_session() do
+				local nick = pr:get_child_text("nick", "http://jabber.org/protocol/nick") or "no_name";
+				log.info(string.format("occupant joined: room=%s, room_jid=%s, user_jid=%s, nick=%s", room:get_name(), room.jid, tostring(occupant.nick), tostring(nick)));
+			end
 		end
 	end
-	module:log("info", "hooks %s - %s",created_host,muc_component_host);
-    if created_host == muc_component_host then -- the conference muc component
-        local muc_module = module:context(created_host);
-        muc_module:hook("muc-room-created", room_created, -1);
-		muc_module:hook("muc-occupant-joined", occupant_joined, -1);
-		muc_module:hook("muc-broadcast-presence", occupant_joined, -1);
-    	module:log("info", "hooks ok %s",created_host);
+end
+
+function occupant_left_log(event)
+    debug_log.info("occupant_left_log ok");
+	local room = event.room;
+	local occupant = event.occupant;
+	if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
+		for _, pr in occupant:each_session() do
+			local nick = pr:get_child_text("nick", "http://jabber.org/protocol/nick") or "no_name";
+			log.info(string.format("occupant left: room=%s, room_jid=%s, user_jid=%s, nick=%s", room:get_name(), room.jid, tostring(occupant.nick), tostring(nick)));
+		end
 	end
 end
 
 function module.load()
-    module:depends("http");
-	module:provides("http", {
-		default_path = "/";
-		route = {
-			["GET room-size"] = function (event) return async_handler_wrapper(event,get_room_size) end;
-			["GET sessions"] = function () return tostring(it.count(it.keys(prosody.full_sessions))); end;
-			["GET rooms"] = function (event) return async_handler_wrapper(event,rooms) end;
-			["GET room"] = function (event) return async_handler_wrapper(event,get_room) end;
-			["PUT room"] = function (event) return async_handler_wrapper(event,create_room) end;
-			["DELETE room"] = function (event) return async_handler_wrapper(event,destroy_room) end;
-			["PATCH room"] = function (event) return async_handler_wrapper(event,change_room) end;
-			["GET room_stats"] = function (event) return async_handler_wrapper(event,get_room_stats) end;
-		};
-	});
+	module:hook("muc-room-created", room_created, -1);
+	module:hook("muc-room-created", occupant_joined_log, -1);
+
+	module:hook("muc-room-destroyed", room_destroyed, -1);
+
+	module:hook("muc-occupant-joined", occupant_joined, -1);
+	module:hook("muc-occupant-joined", occupant_joined_log, -1);
+
+	module:hook("muc-occupant-pre-leave", occupant_left_log, -1);
+	
+	module:hook("muc-broadcast-presence", occupant_joined, -1);
+	debug_log.info("hooks ok ",module.host);
 end
 
-prosody.events.add_handler("host-activated", process_host);
