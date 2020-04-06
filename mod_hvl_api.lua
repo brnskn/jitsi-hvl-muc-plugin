@@ -312,3 +312,19 @@ function module.load()
 		};
 	});
 end
+
+
+function process_host(host)
+	for _, host in pairs(hosts) do
+		local node, hostname = jid.split(tostring(host.host));
+		if hostname:match"([^.]*).(.*)" == muc_domain_prefix then
+			muc_component_host = host.host;
+		end
+	end
+end
+
+if prosody.hosts[muc_component_host] == nil then
+	prosody.events.add_handler("host-activated", process_host);
+else
+    process_host(muc_component_host);
+end
