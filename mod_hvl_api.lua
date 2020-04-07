@@ -220,7 +220,7 @@ function change_room(event)
         return { status_code = 404; };
 	end
 	if password then
-		room:set_password(room, password);
+		room:set_password(password);
 	end
 	return { status_code = 200; };
 end
