@@ -156,7 +156,7 @@ Component "conference.$HOSTNAME" "muc"
 
 **Method** : `DELETE`
 
-**cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}"`
+**cURL** : `curl -X DELETE "http://localhost:5280/room?room={ROOM_NAME}"`
 
 ## Success Responses
 
@@ -168,7 +168,7 @@ Component "conference.$HOSTNAME" "muc"
 
 **Method** : `PATCH`
 
-**cURL** : `curl -X PUT "http://localhost:5280/room?room={ROOM_NAME}&password={PASSWORD}"`
+**cURL** : `curl -X PATCH "http://localhost:5280/room?room={ROOM_NAME}&password={PASSWORD}"`
 
 ## Success Responses
 
