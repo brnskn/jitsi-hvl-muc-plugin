@@ -50,6 +50,7 @@ function get_room_size(event)
     if (not event.request.url.query) then
         return { status_code = 400; };
     end
+	process_host();
 
 	local params = parse(event.request.url.query);
 	local room_name = params["room"];
@@ -88,6 +89,7 @@ function get_room (event)
     if (not event.request.url.query) then
         return { status_code = 400; };
     end
+	process_host();
 
 	local params = parse(event.request.url.query);
 	local room_name = params["room"];
@@ -156,6 +158,7 @@ function create_room (event)
     if (not event.request.url.query) then
         return { status_code = 400; };
 	end
+	process_host();
 
 	local params = parse(event.request.url.query);
 	local room_name = params["room"];
@@ -183,6 +186,7 @@ function destroy_room(event)
     if (not event.request.url.query) then
         return { status_code = 400; };
 	end
+	process_host();
 	local params = parse(event.request.url.query);
 	local room_name = params["room"];
 	local room_address
@@ -202,6 +206,7 @@ function change_room(event)
     if (not event.request.url.query) then
         return { status_code = 400; };
 	end
+	process_host();
 	local params = parse(event.request.url.query);
 	local room_name = params["room"];
 	local password = params["password"];
@@ -218,6 +223,7 @@ function change_room(event)
 end
 
 function rooms()
+	process_host();
 	local room_list = array();
 	local component = hosts[muc_component_host];
 	if component then
@@ -306,7 +312,7 @@ function module.load()
 end
 
 
-function process_host(host)
+function process_host()
 	for _, host in pairs(hosts) do
 		local node, hostname = jid.split(tostring(host.host));
 		if hostname:match"([^.]*).(.*)" == muc_domain_prefix then
