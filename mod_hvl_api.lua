@@ -8,14 +8,6 @@ local json = require "util.json";
 local iterators = require "util.iterators";
 local array = require"util.array";
 
-local have_async = pcall(require, "util.async");
-if not have_async then
-    module:log("error", "requires a version of Prosody with util.async");
-    return;
-end
-
-local async_handler_wrapper = module:require "util".async_handler_wrapper;
-
 local tostring = tostring;
 
 function urldecode(s)
@@ -301,14 +293,14 @@ function module.load()
 	module:provides("http", {
 		default_path = "/";
 		route = {
-			["GET room-size"] = function (event) return async_handler_wrapper(event,get_room_size) end;
+			["GET room-size"] = get_room_size;
 			["GET sessions"] = function () return tostring(it.count(it.keys(prosody.full_sessions))); end;
-			["GET rooms"] = function (event) return async_handler_wrapper(event,rooms) end;
-			["GET room"] = function (event) return async_handler_wrapper(event,get_room) end;
-			["PUT room"] = function (event) return async_handler_wrapper(event,create_room) end;
-			["DELETE room"] = function (event) return async_handler_wrapper(event,destroy_room) end;
-			["PATCH room"] = function (event) return async_handler_wrapper(event,change_room) end;
-			["GET room_stats"] = function (event) return async_handler_wrapper(event,get_room_stats) end;
+			["GET rooms"] = rooms;
+			["GET room"] = get_room;
+			["PUT room"] = create_room;
+			["DELETE room"] = destroy_room;
+			["PATCH room"] = change_room;
+			["GET room_stats"] = get_room_stats;
 		};
 	});
 end

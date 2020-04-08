@@ -85,22 +85,7 @@ log.outfile = "hvl_muc.log";
 local debug_log = get_log();
 debug_log.outfile = "hvl_muc.debug.log";
 
-
-local jid = require "util.jid";
-local array = require"util.array";
-
-local have_async = pcall(require, "util.async");
-if not have_async then
-    module:log("error", "requires a version of Prosody with util.async");
-    return;
-end
-
-local async_handler_wrapper = module:require "util".async_handler_wrapper;
-
 local tostring = tostring;
-
--- option to enable/disable room API token verifications
-local get_room_from_jid = module:require "util".get_room_from_jid;
 
 local driver = require "luasql.sqlite3"
 env = driver.sqlite3()
