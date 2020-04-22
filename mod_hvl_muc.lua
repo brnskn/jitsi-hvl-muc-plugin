@@ -87,6 +87,11 @@ debug_log.outfile = "hvl_muc.debug.log";
 
 local tostring = tostring;
 
+
+local function starts_with(str, start)
+	return str:sub(1, #start) == start
+ end
+
 local driver = require "luasql.sqlite3"
 env = driver.sqlite3()
 con = env:connect("logs.db")
@@ -114,6 +119,11 @@ function room_created(event)
 	debug_log.info("room_created ok");
 	local room = event.room;
 
+	if starts_with(room:get_name(), "org.jitsi.jicofo.health.health") then
+		debug_log.info("room org.jitsi.jicofo.health.health ignored")
+		return
+	end
+
 	log.info(string.format("room created: room=%s, room_jid=%s", room:get_name(), room.jid));
 
 	res = con:execute(string.format([[
@@ -135,12 +145,23 @@ function room_destroyed(event)
 	debug_log.info("room_destroyed ok");
 	local room = event.room;
 
+	if starts_with(room:get_name(), "org.jitsi.jicofo.health.health") then
+		debug_log.info("room org.jitsi.jicofo.health.health ignored")
+		return
+	end
+
 	log.info(string.format("room destroyed: room=%s, room_jid=%s", room:get_name(), room.jid));
 end
 
 function occupant_joined(event)
     debug_log.info("occupant_joined ok");
 	local room = event.room;
+
+	if starts_with(room:get_name(), "org.jitsi.jicofo.health.health") then
+		debug_log.info("room org.jitsi.jicofo.health.health ignored")
+		return
+	end
+
 	local occupant = event.occupant;
 	if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
 		for _, pr in occupant:each_session() do
@@ -153,7 +174,10 @@ function occupant_joined(event)
 				if tonumber(cur:fetch({}, "a").count) > 0 then
 					cur = con:execute(string.format("SELECT * FROM room_occupants WHERE room_jid='%s' AND jid='%s'", room.jid, tostring(occupant.nick)));
 					old_room = cur:fetch({}, "a");
+					
+					debug_log.info(string.format("occupant changed old name %s new name %s", old_room.display_name, tostring(nick)))
 					if old_room.display_name~=tostring(nick) then
+						debug_log.info("occupant changed if check ok")
 						log.info(string.format("occupant changed username: room=%s, room_jid=%s, user_jid=%s, nick=%s, old_nick=%s", room:get_name(), room.jid, tostring(occupant.nick), tostring(nick), old_room.display_name));
 					end
 
@@ -197,6 +221,12 @@ end
 function occupant_joined_log(event)
     debug_log.info("occupant_joined_log ok");
 	local room = event.room;
+
+	if starts_with(room:get_name(), "org.jitsi.jicofo.health.health") then
+		debug_log.info("room org.jitsi.jicofo.health.health ignored")
+		return
+	end
+
 	local occupant = event.occupant;
 	if occupant then
 		if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
@@ -211,6 +241,12 @@ end
 function occupant_left_log(event)
     debug_log.info("occupant_left_log ok");
 	local room = event.room;
+
+	if starts_with(room:get_name(), "org.jitsi.jicofo.health.health") then
+		debug_log.info("room org.jitsi.jicofo.health.health ignored")
+		return
+	end
+
 	local occupant = event.occupant;
 	if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
 		for _, pr in occupant:each_session() do
