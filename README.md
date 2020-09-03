@@ -1,4 +1,6 @@
-# jitsi-hvl-muc-plugin
+# Jitsi Hvl-Muc Plugin
+Jitsi Hvl-Muc Plugin is a plugin that provides you local APIs to manage and get your jitsi data. API endpoints can only be accessed from localhost. **There is no authentication protection, that's why don't make it accessible from remote.**
+
 
 # Installation
 
