@@ -134,6 +134,10 @@ function room_created(event)
 		room:get_password() or "",
 		tostring(room.created_timestamp or os.time(os.date("!*t")) * 1000))
 	)
+
+	res = con:execute(string.format([[DELETE FROM room_occupants WHERE room_jid='%s']], 
+		room.jid))
+	
     debug_log.info(string.format([[room added INSERT INTO rooms VALUES ('%s', '%s', '%s', '%s')]], 
 		room.jid, 
 		room:get_name(), 
@@ -248,12 +252,28 @@ function occupant_left_log(event)
 	end
 
 	local occupant = event.occupant;
+	
+
 	if string.sub(occupant.nick,-string.len("/focus"))~="/focus" then
+
+		res = con:execute(string.format([[DELETE FROM room_occupants WHERE room_jid = '%s' AND jid = '%s']], 
+			room.jid,	
+			tostring(occupant.nick)))
+
+		debug_log.info(string.format([[occupant left DELETE FROM room_occupants WHERE room_jid = '%s' AND jid = '%s')]], 
+			room.jid, 
+			tostring(occupant.nick)));
+
+
 		for _, pr in occupant:each_session() do
 			local nick = pr:get_child_text("nick", "http://jabber.org/protocol/nick") or "no_name";
 			log.info(string.format("occupant left: room=%s, room_jid=%s, user_jid=%s, nick=%s", room:get_name(), room.jid, tostring(occupant.nick), tostring(nick)));
 		end
+
+		
+
 	end
+
 end
 
 function module.load()
